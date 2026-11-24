@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pipeline Wall</title>
+<style>
+  :root {
+    --bg: #eef2f6;
+    --card: #ffffff;
+    --ink: #14213d;
+    --muted: #5b6b82;
+    --line: #d3dbe6;
+    --accent: #2a6fdb;
+    --ok: #1f7a55;
+    --bad: #b3322f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5;
+  }
+  main { max-width: 640px; margin: 0 auto; padding: 40px 20px 64px; }
+  h1 { font-size: 2rem; margin: 0 0 6px; letter-spacing: -0.02em; }
+  .lead { margin: 0 0 24px; color: var(--muted); max-width: 52ch; }
+  #status {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; margin-bottom: 24px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+    font-size: 0.95rem;
+  }
+  #status .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+  #status.ok .dot { background: var(--ok); }
+  #status.bad .dot { background: var(--bad); }
+  form {
+    display: grid; gap: 12px; padding: 20px; margin-bottom: 28px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+  }
+  label { display: grid; gap: 4px; font-weight: 600; font-size: 0.95rem; }
+  input, textarea {
+    font: inherit; padding: 10px 12px; color: var(--ink);
+    border: 1px solid var(--line); border-radius: 6px; background: #fff;
+  }
+  textarea { min-height: 84px; resize: vertical; }
+  input:focus-visible, textarea:focus-visible, button:focus-visible {
+    outline: 3px solid rgba(42,111,219,.35); outline-offset: 1px; border-color: var(--accent);
+  }
+  button {
+    font: inherit; font-weight: 600; padding: 11px 16px; cursor: pointer;
+    color: #fff; background: var(--accent); border: 0; border-radius: 6px;
+  }
+  button:hover { background: #1f5cbc; }
+  button:disabled { opacity: .6; cursor: wait; }
+  #formMsg { min-height: 1.4em; margin: 0; font-size: 0.92rem; color: var(--bad); }
+  h2 { font-size: 1.15rem; margin: 0 0 12px; }
+  ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  li { padding: 14px 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+  li .who { font-weight: 700; }
+  li .when { color: var(--muted); font-size: 0.85rem; margin-left: 8px; }
+  li p { margin: 4px 0 0; overflow-wrap: anywhere; }
+  .empty { color: var(--muted); padding: 20px; text-align: center; border: 1px dashed var(--line); border-radius: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Pipeline Wall</h1>
+  <p class="lead">A practice app for your hackathon setup. Post a message, refresh the page, and open the site on your phone. If the message is still there, your database, code and deployment all work.</p>
+
+  <div id="status"><span class="dot"></span><span id="statusText">Checking connection…</span></div>
+
+  <form id="form">
+    <label>Your name
+      <input id="name" maxlength="40" required autocomplete="name">
+    </label>
+    <label>Message
+      <textarea id="body" maxlength="200" required></textarea>
+    </label>
+    <button id="send" type="submit">Post message</button>
+    <p id="formMsg" role="alert"></p>
+  </form>
+
+  <h2>Messages</h2>
+  <ul id="list"></ul>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  // 1) Paste your own values from Supabase: Project Settings -> API
+  const SUPABASE_URL = 'https://lrdgzmmwmhovkcbcjwij.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_6lgtyB87Puf7GGN3gNP4WQ_xA0UXEqt';
+
+  const statusBox = document.getElementById('status');
+  const statusText = document.getElementById('statusText');
+  const list = document.getElementById('list');
+  const form = document.getElementById('form');
+  const formMsg = document.getElementById('formMsg');
+  const sendBtn = document.getElementById('send');
+
+  function setStatus(kind, text) {
+    statusBox.className = kind;
+    statusText.textContent = text;
+  }
+
+  const notConfigured = SUPABASE_URL.startsWith('PASTE') || SUPABASE_ANON_KEY.startsWith('PASTE');
+  let db = null;
+
+  if (notConfigured) {
+    setStatus('bad', 'Not connected. Open index.html and paste your Supabase URL and anon key at the top of the script.');
+    sendBtn.disabled = true;
+  } else {
+    db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    loadMessages();
+  }
+
+  function render(rows) {
+    list.innerHTML = '';
+    if (!rows.length) {
+      const empty = document.createElement('li');
+      empty.className = 'empty';
+      empty.textContent = 'No messages yet. Post the first one above.';
+      list.appendChild(empty);
+      return;
+    }
+    for (const row of rows) {
+      const li = document.createElement('li');
+      const who = document.createElement('span');
+      who.className = 'who';
+      who.textContent = row.name;
+      const when = document.createElement('span');
+      when.className = 'when';
+      when.textContent = new Date(row.created_at).toLocaleString();
+      const p = document.createElement('p');
+      p.textContent = row.body;
+      li.append(who, when, p);
+      list.appendChild(li);
+    }
+  }
+
+  async function loadMessages() {
+    const { data, error } = await db
+      .from('messages')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) {
+      setStatus('bad', 'Connected, but reading failed: ' + error.message);
+      return;
+    }
+    setStatus('ok', 'Connected to Supabase. ' + data.length + ' message' + (data.length === 1 ? '' : 's') + ' loaded.');
+    render(data);
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    formMsg.textContent = '';
+    sendBtn.disabled = true;
+    const { error } = await db.from('messages').insert({
+      name: document.getElementById('name').value.trim(),
+      body: document.getElementById('body').value.trim()
+    });
+    sendBtn.disabled = false;
+    if (error) {
+      formMsg.textContent = 'Could not post: ' + error.message;
+      return;
+    }
+    document.getElementById('body').value = '';
+    loadMessages();
+  });
+</script>
+</body>
+</html>
